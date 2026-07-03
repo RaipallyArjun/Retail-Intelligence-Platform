@@ -1,0 +1,8 @@
+pandas
+numpy
+matplotlib
+jupyter
+scikit-learn
+openpyxl
+mysql-connector-python
+sqlalchemy
