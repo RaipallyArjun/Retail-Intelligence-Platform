@@ -4,5 +4,5 @@ matplotlib
 jupyter
 scikit-learn
 openpyxl
-mysql-connector-python
-sqlalchemy
+streamlit
+plotly
