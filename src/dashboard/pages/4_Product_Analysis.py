@@ -35,9 +35,17 @@ box-shadow:0 2px 10px rgba(0,0,0,0.12);
 st.title("📦 Product Analysis")
 st.caption("Explore product performance, profitability and discounting across categories.")
 
-conn = get_connection()
-df = pd.read_sql_query("SELECT * FROM Superstore", conn)
-conn.close()
+@st.cache_data
+def load_data():
+    """Read the Superstore table once and reuse it across reruns."""
+    conn = get_connection()
+    try:
+        return pd.read_sql_query("SELECT * FROM Superstore", conn)
+    finally:
+        conn.close()
+
+
+df = load_data()
 st.success("Database Connected Successfully!")
 
 # ------------------------------------------------------------------
@@ -81,7 +89,8 @@ def format_currency(value):
     return f"${value:,.2f}"
 
 
-total_products = filtered_df["Product Name"].nunique()
+# Count products by Product ID (the true unique key); a few IDs share more than one name.
+total_products = filtered_df["Product ID"].nunique()
 total_sales = filtered_df["Sales"].sum()
 total_profit = filtered_df["Profit"].sum()
 avg_discount = filtered_df["Discount"].mean()
@@ -104,7 +113,7 @@ else:
     best_product = "N/A"
 
 loss_products = (
-    filtered_df.groupby("Product Name")["Profit"]
+    filtered_df.groupby("Product ID")["Profit"]
     .sum()
     .lt(0)
     .sum()

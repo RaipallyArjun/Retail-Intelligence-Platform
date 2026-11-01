@@ -32,7 +32,7 @@ box-shadow:0 2px 10px rgba(0,0,0,0.12);
 # Title
 # ------------------------------------------------------------------
 st.title("👥 Customer Analysis")
-st.caption("Understand customer behavior, retention and value across regions and segments.")
+st.caption("Understand customer behavior, repeat purchasing and value across regions and segments.")
 
 @st.cache_data
 def load_data():
