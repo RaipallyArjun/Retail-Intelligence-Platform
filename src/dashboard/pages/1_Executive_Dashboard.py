@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from database.db_connection import get_connection
+from database.us_states import STATE_CODES
 
 # ==========================
 # Page Configuration
@@ -24,6 +25,7 @@ st.set_page_config(
     page_icon="🏠",
     layout="wide"
 )
+
 st.markdown("""
 <style>
 
@@ -44,14 +46,17 @@ st.markdown("---")
 # Load Data
 # ==========================
 
-conn = get_connection()
+@st.cache_data
+def load_data():
+    """Read the Superstore table once and reuse it across reruns."""
+    conn = get_connection()
+    try:
+        return pd.read_sql_query("SELECT * FROM Superstore", conn)
+    finally:
+        conn.close()
 
-df = pd.read_sql_query(
-    "SELECT * FROM Superstore",
-    conn
-)
 
-conn.close()
+df = load_data()
 st.success("Database Connected Successfully!")
 
 st.markdown("---")
@@ -127,6 +132,7 @@ avg_profit_order = (
     total_profit / total_orders
     if total_orders != 0 else 0
 )
+
 st.markdown("## 📊 Key Performance Indicators")
 
 kpi1, kpi2, kpi3, kpi4 = st.columns(4)
@@ -219,17 +225,31 @@ fig_region = px.bar(
     title="Profit by Region"
 )
 
-fig_region.update_layout(showlegend=False,
-                         height=360,
-    margin=dict(l=10, r=10, t=50, b=10))
+fig_region.update_layout(
+    showlegend=False,
+    height=360,
+    margin=dict(l=10, r=10, t=50, b=10)
+)
 
 with left:
-    st.plotly_chart(fig_category, use_container_width=True,config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_category,
+        use_container_width=True,
+        config={"displayModeBar": False}
+    )
 
 with right:
-    st.plotly_chart(fig_region, use_container_width=True,config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_region,
+        use_container_width=True,
+        config={"displayModeBar": False}
+    )
 
 st.markdown("---")
+
+# ==========================
+# Sales by State (map)
+# ==========================
 
 st.subheader("Sales by State")
 
@@ -237,15 +257,20 @@ state_sales = (
     filtered_df.groupby("State", as_index=False)["Sales"]
     .sum()
 )
+
+# Plotly's "USA-states" mode needs two-letter codes, not full names.
+state_sales["State Code"] = state_sales["State"].map(STATE_CODES)
+
 fig_map = px.choropleth(
     state_sales,
-    locations="State",
+    locations="State Code",
     locationmode="USA-states",
     color="Sales",
     scope="usa",
     color_continuous_scale="Blues",
     hover_name="State"
 )
+
 fig_map.update_layout(
     height=420,
     margin=dict(l=10, r=10, t=50, b=10)
@@ -258,7 +283,8 @@ fig_map.update_geos(
 
 st.plotly_chart(
     fig_map,
-    use_container_width=True,config={"displayModeBar": False}
+    use_container_width=True,
+    config={"displayModeBar": False}
 )
 
 # ==================================================
@@ -316,12 +342,7 @@ fig_products = px.bar(
 
 fig_products.update_layout(
     height=420,
-    margin=dict(
-        l=250,
-        r=20,
-        t=50,
-        b=20
-    ),
+    margin=dict(l=250, r=20, t=50, b=20),
     yaxis=dict(
         categoryorder="total ascending",
         tickfont=dict(size=11)
