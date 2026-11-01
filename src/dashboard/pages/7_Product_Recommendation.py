@@ -52,9 +52,17 @@ box-shadow:0 2px 10px rgba(0,0,0,0.12);
 st.title("📦 Product Recommendation")
 st.caption("A rule-based recommendation engine that scores products using Sales, Profit, Orders, and Discount.")
 
-conn = get_connection()
-df = pd.read_sql_query("SELECT * FROM Superstore", conn)
-conn.close()
+@st.cache_data
+def load_data():
+    """Read the Superstore table once and reuse it across reruns."""
+    conn = get_connection()
+    try:
+        return pd.read_sql_query("SELECT * FROM Superstore", conn)
+    finally:
+        conn.close()
+
+
+df = load_data()
 st.success("Database Connected Successfully!")
 
 df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
@@ -180,13 +188,13 @@ else:
     best_category = product_df.groupby("Category")["Recommendation Score"].mean().idxmax()
 
 if recommended_products > 0:
-    recommendation_accuracy = (
+    demand_alignment = (
         product_df.loc[product_df["Recommended"], "High Demand"].sum()
         / recommended_products
         * 100
     )
 else:
-    recommendation_accuracy = 0.0
+    demand_alignment = 0.0
 
 st.subheader("📦 Recommendation Overview")
 
@@ -200,12 +208,13 @@ e, f, g, h = st.columns(4)
 e.metric("💰 Avg Sales / Product", format_currency(avg_sales))
 f.metric("📈 Avg Profit / Product", format_currency(avg_profit))
 g.metric("🏆 Best Recommended Category", best_category)
-h.metric("🎯 Recommendation Accuracy", f"{recommendation_accuracy:.1f}%")
+h.metric("🎯 Demand Alignment", f"{demand_alignment:.1f}%")
 
 st.caption(
     "Products in the top 30% by Recommendation Score are marked Recommended. "
-    "Recommendation Accuracy measures how many Recommended products are also High Demand — "
-    "a rule-based sanity check on whether the score aligns with actual customer demand."
+    "Demand Alignment is the share of Recommended products that are also High Demand "
+    "(top quartile by orders). Orders is part of the score, so this is a consistency "
+    "check, not a measure of predictive accuracy."
 )
 
 st.markdown("---")

@@ -34,9 +34,17 @@ box-shadow:0 2px 10px rgba(0,0,0,0.12);
 st.title("👥 Customer Analysis")
 st.caption("Understand customer behavior, retention and value across regions and segments.")
 
-conn = get_connection()
-df = pd.read_sql_query("SELECT * FROM Superstore", conn)
-conn.close()
+@st.cache_data
+def load_data():
+    """Read the Superstore table once and reuse it across reruns."""
+    conn = get_connection()
+    try:
+        return pd.read_sql_query("SELECT * FROM Superstore", conn)
+    finally:
+        conn.close()
+
+
+df = load_data()
 st.success("Database Connected Successfully!")
 
 # ------------------------------------------------------------------
@@ -89,7 +97,7 @@ repeat_customers = (
     .sum()
 )
 
-new_customers = total_customers - repeat_customers
+one_time_customers = total_customers - repeat_customers
 
 avg_sales_customer = (
     filtered_df["Sales"].sum() / total_customers
@@ -105,8 +113,9 @@ avg_profit_customer = (
 
 avg_discount = filtered_df["Discount"].mean()
 
-# Retention rate — share of customers with more than one order
-retention_rate = (
+# Repeat customer rate — share of customers with more than one order
+# (within the current filters; this is not a true retention measure)
+repeat_rate = (
     repeat_customers / total_customers * 100
 ) if total_customers else 0
 
@@ -114,14 +123,14 @@ st.subheader("👥 Customer Performance Overview")
 a, b, c, d = st.columns(4)
 a.metric("👥 Total Customers", f"{total_customers:,}")
 b.metric("🔁 Repeat Customers", f"{repeat_customers:,}")
-c.metric("🆕 New Customers", f"{new_customers:,}")
+c.metric("1️⃣ One-Time Customers", f"{one_time_customers:,}")
 d.metric("💰 Avg Sales per Customer", format_currency(avg_sales_customer))
 
 e, f, g, h = st.columns(4)
 e.metric("📦 Avg Orders per Customer", f"{avg_orders_customer:.2f}")
 f.metric("💵 Avg Profit per Customer", format_currency(avg_profit_customer))
 g.metric("📊 Avg Discount", f"{avg_discount:.2%}")
-h.metric("🔁 Retention Rate", f"{retention_rate:.2f}%")
+h.metric("🔁 Repeat Customer Rate", f"{repeat_rate:.2f}%")
 
 st.markdown("---")
 
