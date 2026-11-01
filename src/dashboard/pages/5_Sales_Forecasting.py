@@ -21,7 +21,6 @@ COLOR_CUSTOMER = "#ff7f0e"  # Orange
 COLOR_PRODUCT = "#9467bd"   # Purple
 COLOR_FORECAST = "#ff7f0e"  # Orange — reserved for forecasted/predicted values
 
-FORECAST_WINDOW = 3    # months used in the moving average
 FORECAST_PERIODS = 12  # months to forecast forward
 
 st.markdown("""
@@ -39,11 +38,19 @@ box-shadow:0 2px 10px rgba(0,0,0,0.12);
 # Title
 # ------------------------------------------------------------------
 st.title("📉 Sales Forecasting")
-st.caption("Project future sales using a moving-average forecast built on historical trends.")
+st.caption("Project future sales using a seasonal forecast: last year's monthly pattern scaled by the latest year-over-year growth.")
 
-conn = get_connection()
-df = pd.read_sql_query("SELECT * FROM Superstore", conn)
-conn.close()
+@st.cache_data
+def load_data():
+    """Read the Superstore table once and reuse it across reruns."""
+    conn = get_connection()
+    try:
+        return pd.read_sql_query("SELECT * FROM Superstore", conn)
+    finally:
+        conn.close()
+
+
+df = load_data()
 st.success("Database Connected Successfully!")
 
 df["Order Date"] = pd.to_datetime(df["Order Date"], errors="coerce")
@@ -80,28 +87,43 @@ filtered_df = filtered_df.dropna(subset=["Order Date"])
 # Forecasting helpers
 # ------------------------------------------------------------------
 def build_monthly_series(data):
-    """Aggregate Sales into a chronological monthly time series."""
+    """Aggregate Sales into a continuous monthly series (empty months = 0)."""
     monthly = data.assign(Month=data["Order Date"].dt.to_period("M").dt.to_timestamp())
-    monthly = monthly.groupby("Month", as_index=False)["Sales"].sum().sort_values("Month")
-    return monthly
+    monthly = monthly.groupby("Month")["Sales"].sum()
+    if monthly.empty:
+        return monthly.reset_index()
+    full = pd.date_range(monthly.index.min(), monthly.index.max(), freq="MS")
+    return monthly.reindex(full, fill_value=0.0).rename_axis("Month").reset_index()
 
 
-def moving_average_forecast(values, window=FORECAST_WINDOW, periods=FORECAST_PERIODS):
+def seasonal_forecast(values, periods=FORECAST_PERIODS):
     """
-    Simple moving average forecast: each future value is the mean of
-    the trailing `window` values, feeding forward as history runs out.
+    Each future month = the same month last year, scaled by the latest
+    year-over-year growth. Falls back to the average with < 12 months of data.
     """
-    series = list(values)
-    if not series:
+    series = np.asarray(values, dtype=float)
+    if len(series) == 0:
         return [0.0] * periods
+    if len(series) < 12:
+        return [float(series.mean())] * periods
+    last_year = series[-12:]
+    growth = 1.0
+    if len(series) >= 24 and series[-24:-12].sum() > 0:
+        growth = series[-12:].sum() / series[-24:-12].sum()
+    return [float(last_year[i % 12] * growth) for i in range(periods)]
 
-    effective_window = min(window, len(series))
-    forecast = []
-    for _ in range(periods):
-        next_val = float(np.mean(series[-effective_window:]))
-        forecast.append(next_val)
-        series.append(next_val)
-    return forecast
+
+def backtest_accuracy(values):
+    """Hold out the last 12 months, forecast them, return 100 - WAPE (%), or None."""
+    series = np.asarray(values, dtype=float)
+    if len(series) < 24:
+        return None
+    actual = series[-12:]
+    forecast = np.array(seasonal_forecast(series[:-12]))
+    if actual.sum() == 0:
+        return None
+    wape = np.abs(actual - forecast).sum() / actual.sum() * 100
+    return max(0.0, 100 - wape)
 
 
 monthly_sales = build_monthly_series(filtered_df)
@@ -113,10 +135,12 @@ if not monthly_sales.empty:
         periods=FORECAST_PERIODS,
         freq="MS"
     )
-    forecast_values = moving_average_forecast(monthly_sales["Sales"].tolist())
+    forecast_values = seasonal_forecast(monthly_sales["Sales"].tolist())
+    accuracy = backtest_accuracy(monthly_sales["Sales"].tolist())
 else:
     future_dates = pd.date_range(start=pd.Timestamp.today(), periods=FORECAST_PERIODS, freq="MS")
     forecast_values = [0.0] * FORECAST_PERIODS
+    accuracy = None
 
 forecast_df = pd.DataFrame({"Month": future_dates, "Forecast Sales": forecast_values})
 
@@ -173,13 +197,13 @@ e, f, g, h = st.columns(4)
 e.metric("💰 Average Monthly Sales", format_currency(avg_monthly_sales))
 f.metric("📈 Highest Forecast Month", highest_forecast_month)
 g.metric("📉 Lowest Forecast Month", lowest_forecast_month)
-h.metric("🎯 Forecast Accuracy", "Coming Soon")
+h.metric("🎯 Forecast Accuracy", f"{accuracy:.1f}%" if accuracy is not None else "N/A")
 
 st.info(
-    f"**Forecast Summary:** Based on the last {FORECAST_WINDOW} months, total forecasted "
-    f"sales for the next 12 months are **{format_currency(forecast_sales)}**, representing "
-    f"an expected growth of **{growth_indicator} {expected_growth:+.2f}%** over the previous "
-    f"12 months."
+    f"**Forecast Summary:** Using last year's monthly pattern scaled by the latest "
+    f"year-over-year growth, total forecasted sales for the next 12 months are "
+    f"**{format_currency(forecast_sales)}**, representing an expected growth of "
+    f"**{growth_indicator} {expected_growth:+.2f}%** over the previous 12 months."
 )
 
 st.markdown("---")
@@ -267,7 +291,7 @@ for cat in categories_for_forecast:
     else:
         cat_df = filtered_df
     cat_monthly = build_monthly_series(cat_df)
-    cat_forecast = moving_average_forecast(cat_monthly["Sales"].tolist())
+    cat_forecast = seasonal_forecast(cat_monthly["Sales"].tolist())
     category_forecast_rows.append({
         "Category": cat,
         "Forecast Sales": float(np.sum(cat_forecast))
