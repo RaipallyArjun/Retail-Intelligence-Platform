@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from database.db_connection import get_connection
+from database.us_states import STATE_CODES
 
 st.set_page_config(page_title="Sales Analysis", page_icon="📈", layout="wide")
 
@@ -34,9 +35,17 @@ box-shadow:0 2px 10px rgba(0,0,0,0.12);
 st.title("📈 Sales Analysis")
 st.caption("Analyze sales performance across regions, categories, customers and products.")
 
-conn = get_connection()
-df = pd.read_sql_query("SELECT * FROM Superstore", conn)
-conn.close()
+@st.cache_data
+def load_data():
+    """Read the Superstore table once and reuse it across reruns."""
+    conn = get_connection()
+    try:
+        return pd.read_sql_query("SELECT * FROM Superstore", conn)
+    finally:
+        conn.close()
+
+
+df = load_data()
 st.success("Database Connected Successfully!")
 
 # ------------------------------------------------------------------
@@ -210,9 +219,12 @@ state_sales = (
     .sum()
 )
 
+# Plotly's "USA-states" mode needs two-letter codes, not full names.
+state_sales["State Code"] = state_sales["State"].map(STATE_CODES)
+
 fig_map = px.choropleth(
     state_sales,
-    locations="State",
+    locations="State Code",
     locationmode="USA-states",
     color="Sales",
     scope="usa",
