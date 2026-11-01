@@ -11,8 +11,6 @@ __pycache__/
 
 *.pbix.autosave
 
-data/processed/
-
 *.log
 
 .DS_Store
